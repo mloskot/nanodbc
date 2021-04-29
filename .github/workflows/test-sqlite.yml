@@ -1,0 +1,57 @@
+name: "Test: SQLite"
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: ubuntu-latest-clang-10, compiler: gcc-10 }
+          - { os: ubuntu-latest-gcc-10, compiler: clang-10 }
+
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Dependencies
+        run: |
+          cc --version
+          sudo apt-get install -y unixodbc unixodbc-dev libsqliteodbc
+          odbcinst -j
+      - name: Install SQLite Driver
+        run: |-
+          cat <<EOF > ${{ github.workspace }}/.odbcinst.ini
+          [SQLite3]
+          Description=SQLite 3 ODBC Driver
+          Driver=/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so
+          Setup=/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so
+          UsageCount=1
+          EOF
+          sudo odbcinst -i -d -f ${{ github.workspace }}/.odbcinst.ini
+          echo "cat /etc/odbcinst.ini"
+          cat /etc/odbcinst.ini
+      - name: Install SQLite Data Source
+        run: |-
+          cat <<EOF > ${{ github.workspace }}/.odbc.ini
+          [testdsn]
+          Driver=SQLite3
+          EOF
+          sudo odbcinst -i -s -l -f ${{ github.workspace }}/.odbc.ini
+          echo "cat /etc/odbc.ini"
+          cat /etc/odbc.ini
+      - name: Run CMake to configure
+        run: |
+          cmake --version
+          cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Run CMake to build
+        run: |
+          cmake --build ${{ github.workspace }}/build --config Release -j
+      - name: Run CTest
+        run: |
+          cd ${{ github.workspace }}/build/test
+          ctest --output-on-failure -R utility_tests
+          ctest --output-on-failure -R sqlite_tests
